@@ -205,17 +205,21 @@ export default function App() {
   const drillCandidateChartRef = useRef<HTMLDivElement>(null);
   const drillBairroChartRef = useRef<HTMLDivElement>(null);
 
+  // Helper for safe ECharts instance retrieval
+  const getOrCreateChart = (dom: HTMLDivElement | null) => {
+    if (!dom) return null;
+    return echarts.getInstanceByDom(dom) || echarts.init(dom);
+  };
+
   // Overview Charts render
   useEffect(() => {
-    if (activeTab !== 'overview' && activeTab !== 'redutos') return;
+    if (activeTab !== 'overview') return;
 
-    let chartCand: echarts.ECharts | null = null;
-    let chartBairro: echarts.ECharts | null = null;
-    let chartParty: echarts.ECharts | null = null;
-    let chartReduto: echarts.ECharts | null = null;
-
-    if (overviewCandChartRef.current) {
-      chartCand = echarts.init(overviewCandChartRef.current);
+    const chartCand = getOrCreateChart(overviewCandChartRef.current);
+    const chartBairro = getOrCreateChart(overviewBairroChartRef.current);
+    const chartParty = getOrCreateChart(overviewPartyChartRef.current);
+    const chartReduto = getOrCreateChart(overviewRedutoChartRef.current);
+    if (chartCand) {
       const candMap: Record<string, { votos: number; status: string; partido: string }> = {};
       filteredRecords.forEach(r => {
         if (!candMap[r.candidato]) candMap[r.candidato] = { votos: 0, status: r.status, partido: r.partido };
@@ -246,8 +250,7 @@ export default function App() {
       });
     }
 
-    if (overviewBairroChartRef.current) {
-      chartBairro = echarts.init(overviewBairroChartRef.current);
+    if (chartBairro) {
       const bMap: Record<string, number> = {};
       filteredRecords.forEach(r => {
         bMap[r.bairro] = (bMap[r.bairro] || 0) + r.votos;
@@ -278,8 +281,7 @@ export default function App() {
       });
     }
 
-    if (overviewPartyChartRef.current) {
-      chartParty = echarts.init(overviewPartyChartRef.current);
+    if (chartParty) {
       const pMap: Record<string, number> = {};
       filteredRecords.forEach(r => {
         pMap[r.partido] = (pMap[r.partido] || 0) + r.votos;
@@ -299,8 +301,7 @@ export default function App() {
       });
     }
 
-    if (overviewRedutoChartRef.current) {
-      chartReduto = echarts.init(overviewRedutoChartRef.current);
+    if (chartReduto) {
       const candMap: Record<string, { total: number; bairros: Record<string, number> }> = {};
       filteredRecords.forEach(r => {
         if (!candMap[r.candidato]) candMap[r.candidato] = { total: 0, bairros: {} };
@@ -356,19 +357,14 @@ export default function App() {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      chartCand?.dispose();
-      chartBairro?.dispose();
-      chartParty?.dispose();
-      chartReduto?.dispose();
     };
   }, [activeTab, filteredRecords]);
 
   // Candidate Drilldown chart
   useEffect(() => {
     if (activeTab !== 'candidato') return;
-    let chart: echarts.ECharts | null = null;
-    if (drillCandidateChartRef.current) {
-      chart = echarts.init(drillCandidateChartRef.current);
+    const chart = getOrCreateChart(drillCandidateChartRef.current);
+    if (chart) {
       const candRows = allRecords.filter(r => r.candidato === selectedCandidate);
       const topRows = candRows.sort((a, b) => b.votos - a.votos).slice(0, 12).reverse();
 
@@ -389,16 +385,14 @@ export default function App() {
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
-      chart?.dispose();
     };
   }, [activeTab, selectedCandidate, allRecords]);
 
   // Bairro Drilldown chart
   useEffect(() => {
     if (activeTab !== 'bairro') return;
-    let chart: echarts.ECharts | null = null;
-    if (drillBairroChartRef.current) {
-      chart = echarts.init(drillBairroChartRef.current);
+    const chart = getOrCreateChart(drillBairroChartRef.current);
+    if (chart) {
       const bRows = allRecords.filter(r => r.bairro === selectedBairro);
       const topRows = bRows.sort((a, b) => b.votos - a.votos).slice(0, 12).reverse();
 
@@ -419,7 +413,6 @@ export default function App() {
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
-      chart?.dispose();
     };
   }, [activeTab, selectedBairro, allRecords]);
 
@@ -517,7 +510,7 @@ export default function App() {
           {/* Zone 3: Actions */}
           <div className="flex items-center gap-2.5 shrink-0">
             <a
-              href="/dashboard.html"
+              href="./dashboard.html"
               download="dashboard_votacao_fortaleza_2024.html"
               className="px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-xs"
               title="Baixar arquivo HTML autocontido com os dados completos"
@@ -526,7 +519,7 @@ export default function App() {
               Baixar HTML Autocontido
             </a>
             <a
-              href="/dashboard.html"
+              href="./dashboard.html"
               target="_blank"
               rel="noreferrer"
               className="p-2 text-slate-600 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
@@ -1398,7 +1391,7 @@ export default function App() {
             <p className="text-[11px] text-slate-400 mt-0.5">Dados tabulados oficiais do Tribunal Regional Eleitoral do Ceará (TRE-CE).</p>
           </div>
           <div className="flex items-center gap-4 text-slate-600">
-            <a href="/dashboard.html" download="dashboard_votacao_fortaleza_2024.html" className="hover:text-blue-600 flex items-center gap-1 font-medium">
+            <a href="./dashboard.html" download="dashboard_votacao_fortaleza_2024.html" className="hover:text-blue-600 flex items-center gap-1 font-medium">
               <Download className="w-3.5 h-3.5" />
               Download do HTML Autocontido
             </a>
