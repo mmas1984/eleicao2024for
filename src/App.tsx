@@ -7,22 +7,23 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  TrendingUp,
   MapPin,
-  Users,
-  Award,
-  Vote,
-  FileSpreadsheet,
-  CheckCircle2,
-  AlertCircle,
   ExternalLink,
-  Layers,
   ArrowUpDown,
-  BookOpen
+  BookOpen,
+  Map as MapIcon,
+  Layers,
+  ZoomIn,
+  ZoomOut,
+  Maximize2
 } from 'lucide-react';
 
 import dataSummary from './data-summary.json';
 import rawRecords from './records.json';
+import fortalezaGeoJson from './fortaleza_map.json';
+
+// Register map once globally
+echarts.registerMap('fortaleza', fortalezaGeoJson as any);
 
 interface RecordItem {
   ano: string;
@@ -69,7 +70,7 @@ const PARTIDO_MAP: Record<string, string> = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'redutos' | 'candidato' | 'bairro' | 'tabela' | 'auditoria'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'mapa' | 'redutos' | 'candidato' | 'bairro' | 'tabela' | 'auditoria'>('overview');
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -78,9 +79,21 @@ export default function App() {
   const [bairroFilter, setBairroFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  // Map Mode
+  const [mapMode, setMapMode] = useState<'volume' | 'candidato' | 'vencedor'>('volume');
+  const [mapCandidate, setMapCandidate] = useState<string>('PRISCILA COSTA');
+  const [hoveredOrSelectedBairro, setHoveredOrSelectedBairro] = useState<string>('MESSEJANA');
+
   // Selected for drilldown tabs
   const [selectedCandidate, setSelectedCandidate] = useState<string>('PRISCILA COSTA');
   const [selectedBairro, setSelectedBairro] = useState<string>('MESSEJANA');
+
+  // Bairro Candidate Comparator State
+  const [compareCand1, setCompareCand1] = useState<string>('MARCEL COLARES');
+  const [compareCand2, setCompareCand2] = useState<string>('PRISCILA COSTA');
+  const [compareCand3, setCompareCand3] = useState<string>('LUIZ PAUPINA');
+  const [compareChartType, setCompareChartType] = useState<'bar' | 'radar'>('bar');
+  const bairroCompareChartRef = useRef<HTMLDivElement>(null);
 
   // Table pagination & sort
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -127,6 +140,28 @@ export default function App() {
   const uniqueParties = useMemo(() => [...new Set(allRecords.map(r => r.partido))].sort(), [allRecords]);
   const uniqueCandidates = useMemo(() => [...new Set(allRecords.map(r => r.candidato))].sort(), [allRecords]);
   const uniqueBairros = useMemo(() => [...new Set(allRecords.map(r => r.bairro))].sort(), [allRecords]);
+
+  // Bairro Aggregation Map
+  const bairroSummaryMap = useMemo(() => {
+    const map: Record<string, { totalVotos: number; leader: string; leaderVotes: number; leaderPerc: string; leaderParty: string; leaderStatus: string }> = {};
+    allRecords.forEach(r => {
+      if (!map[r.bairro]) {
+        map[r.bairro] = { totalVotos: 0, leader: '', leaderVotes: 0, leaderPerc: '0%', leaderParty: '', leaderStatus: '' };
+      }
+      map[r.bairro].totalVotos += r.votos;
+      if (r.votos > map[r.bairro].leaderVotes) {
+        map[r.bairro].leaderVotes = r.votos;
+        map[r.bairro].leader = r.candidato;
+        map[r.bairro].leaderParty = r.partido;
+        map[r.bairro].leaderStatus = r.status;
+      }
+    });
+    Object.keys(map).forEach(b => {
+      const tot = map[b].totalVotos;
+      map[b].leaderPerc = tot > 0 ? ((map[b].leaderVotes / tot) * 100).toFixed(1) + '%' : '0%';
+    });
+    return map;
+  }, [allRecords]);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -204,6 +239,7 @@ export default function App() {
   const overviewRedutoChartRef = useRef<HTMLDivElement>(null);
   const drillCandidateChartRef = useRef<HTMLDivElement>(null);
   const drillBairroChartRef = useRef<HTMLDivElement>(null);
+  const mapChartRef = useRef<HTMLDivElement>(null);
 
   // Helper for safe ECharts instance retrieval
   const getOrCreateChart = (dom: HTMLDivElement | null) => {
@@ -219,6 +255,7 @@ export default function App() {
     const chartBairro = getOrCreateChart(overviewBairroChartRef.current);
     const chartParty = getOrCreateChart(overviewPartyChartRef.current);
     const chartReduto = getOrCreateChart(overviewRedutoChartRef.current);
+
     if (chartCand) {
       const candMap: Record<string, { votos: number; status: string; partido: string }> = {};
       filteredRecords.forEach(r => {
@@ -360,6 +397,168 @@ export default function App() {
     };
   }, [activeTab, filteredRecords]);
 
+  // MAP CHART RENDER
+  useEffect(() => {
+    if (activeTab !== 'mapa') return;
+    const chart = getOrCreateChart(mapChartRef.current);
+    if (!chart) return;
+
+    let mapData: any[] = [];
+    let minVal = 0;
+    let maxVal = 20000;
+    let visualColors = ['#f0fdf4', '#86efac', '#22c55e', '#15803d', '#14532d'];
+
+    if (mapMode === 'volume') {
+      visualColors = ['#eff6ff', '#93c5fd', '#3b82f6', '#1d4ed8', '#172554'];
+      maxVal = 21000;
+      mapData = Object.entries(bairroSummaryMap).map(([bairro, info]) => ({
+        name: bairro,
+        value: info.totalVotos,
+        leader: info.leader,
+        leaderVotes: info.leaderVotes,
+        leaderPerc: info.leaderPerc,
+        leaderParty: info.leaderParty
+      }));
+    } else if (mapMode === 'candidato') {
+      visualColors = ['#fef2f2', '#fca5a5', '#ef4444', '#b91c1c', '#7f1d1d'];
+      const candRows = allRecords.filter(r => r.candidato === mapCandidate);
+      const candMap: Record<string, number> = {};
+      candRows.forEach(r => { candMap[r.bairro] = r.votos; });
+      maxVal = Math.max(...candRows.map(r => r.votos), 500);
+
+      mapData = Object.keys(bairroSummaryMap).map(bairro => {
+        const v = candMap[bairro] || 0;
+        const tot = bairroSummaryMap[bairro]?.totalVotos || 0;
+        const p = tot > 0 ? ((v / tot) * 100).toFixed(1) + '%' : '0%';
+        return {
+          name: bairro,
+          value: v,
+          candVotos: v,
+          candPerc: p,
+          totalBairro: tot,
+          candidateName: mapCandidate
+        };
+      });
+    } else if (mapMode === 'vencedor') {
+      visualColors = ['#f5f3ff', '#c4b5fd', '#8b5cf6', '#6d28d9', '#4c1d95'];
+      maxVal = 5000;
+      mapData = Object.entries(bairroSummaryMap).map(([bairro, info]) => ({
+        name: bairro,
+        value: info.leaderVotes,
+        leader: info.leader,
+        leaderParty: info.leaderParty,
+        leaderPerc: info.leaderPerc,
+        totalBairro: info.totalVotos
+      }));
+    }
+
+    chart.setOption({
+      backgroundColor: '#f8fafc',
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderColor: '#e2e8f0',
+        borderWidth: 1,
+        padding: 10,
+        textStyle: { color: '#0f172a' },
+        formatter: (params: any) => {
+          if (!params.data) return `<strong>${params.name}</strong><br/>Sem dados registrados`;
+          if (mapMode === 'volume') {
+            return `
+              <div style="font-family: inherit;">
+                <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 4px;">${params.name}</div>
+                <div style="font-size: 11px; color: #475569;">Total no Bairro: <strong style="color: #2563eb; font-family: monospace;">${params.data.value.toLocaleString('pt-BR')} votos</strong></div>
+                <div style="font-size: 11px; color: #475569; margin-top: 2px;">Vencedor: <strong>${params.data.leader}</strong> (${params.data.leaderVotes.toLocaleString('pt-BR')} · ${params.data.leaderPerc})</div>
+              </div>
+            `;
+          } else if (mapMode === 'candidato') {
+            return `
+              <div style="font-family: inherit;">
+                <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 4px;">${params.name}</div>
+                <div style="font-size: 11px; color: #475569;">Votos de <strong>${params.data.candidateName}</strong>: <strong style="color: #dc2626; font-family: monospace;">${params.data.value.toLocaleString('pt-BR')}</strong></div>
+                <div style="font-size: 11px; color: #475569; margin-top: 2px;">Representatividade no Bairro: <strong>${params.data.candPerc}</strong></div>
+              </div>
+            `;
+          } else {
+            return `
+              <div style="font-family: inherit;">
+                <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 4px;">${params.name}</div>
+                <div style="font-size: 11px; color: #475569;">Líder no Bairro: <strong style="color: #6d28d9;">${params.data.leader} (${params.data.leaderParty})</strong></div>
+                <div style="font-size: 11px; color: #475569; margin-top: 2px;">Votação: <strong>${params.data.value.toLocaleString('pt-BR')} votos</strong> (${params.data.leaderPerc} do bairro)</div>
+              </div>
+            `;
+          }
+        }
+      },
+      visualMap: {
+        min: minVal,
+        max: maxVal,
+        text: ['Alto', 'Baixo'],
+        realtime: false,
+        calculable: true,
+        left: 20,
+        bottom: 25,
+        inRange: { color: visualColors },
+        textStyle: { fontSize: 10, color: '#475569' }
+      },
+      series: [
+        {
+          name: 'Bairros de Fortaleza',
+          type: 'map',
+          map: 'fortaleza',
+          roam: true,
+          scaleLimit: { min: 0.8, max: 6 },
+          label: {
+            show: false,
+            fontSize: 9,
+            color: '#334155'
+          },
+          itemStyle: {
+            borderColor: '#cbd5e1',
+            borderWidth: 1,
+            areaColor: '#f1f5f9'
+          },
+          emphasis: {
+            label: {
+              show: true,
+              fontSize: 11,
+              fontWeight: 'bold',
+              color: '#0f172a'
+            },
+            itemStyle: {
+              areaColor: '#fde047',
+              borderColor: '#0f172a',
+              borderWidth: 1.5
+            }
+          },
+          select: {
+            itemStyle: {
+              areaColor: '#f59e0b',
+              borderColor: '#0f172a',
+              borderWidth: 2
+            }
+          },
+          selectedMode: 'single',
+          data: mapData
+        }
+      ]
+    }, true);
+
+    const handleClick = (params: any) => {
+      if (params.name) {
+        setHoveredOrSelectedBairro(params.name);
+      }
+    };
+    chart.on('click', handleClick);
+
+    const handleResize = () => chart?.resize();
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.off('click', handleClick);
+    };
+  }, [activeTab, mapMode, mapCandidate, bairroSummaryMap, allRecords]);
+
   // Candidate Drilldown chart
   useEffect(() => {
     if (activeTab !== 'candidato') return;
@@ -416,6 +615,196 @@ export default function App() {
     };
   }, [activeTab, selectedBairro, allRecords]);
 
+  // Auto-populate Top 3 candidates of the chosen bairro
+  useEffect(() => {
+    const bRows = allRecords.filter(r => r.bairro === selectedBairro).sort((a,b) => b.votos - a.votos);
+    if (bRows.length >= 3) {
+      setCompareCand1(bRows[0].candidato);
+      setCompareCand2(bRows[1].candidato);
+      setCompareCand3(bRows[2].candidato);
+    } else if (bRows.length === 2) {
+      setCompareCand1(bRows[0].candidato);
+      setCompareCand2(bRows[1].candidato);
+      setCompareCand3('');
+    } else if (bRows.length === 1) {
+      setCompareCand1(bRows[0].candidato);
+      setCompareCand2('');
+      setCompareCand3('');
+    }
+  }, [selectedBairro, allRecords]);
+
+  // Bairro Candidate Comparator Chart render (Grouped Bar or Radar)
+  useEffect(() => {
+    if (activeTab !== 'bairro') return;
+    const chart = getOrCreateChart(bairroCompareChartRef.current);
+    if (!chart) return;
+
+    const candidatesToCompare = [compareCand1, compareCand2, compareCand3].filter(Boolean);
+    if (candidatesToCompare.length === 0) {
+      chart.clear();
+      return;
+    }
+
+    const bRows = allRecords.filter(r => r.bairro === selectedBairro);
+    const totalBairroVotos = bRows.reduce((acc, r) => acc + r.votos, 0);
+
+    const colors = ['#2563eb', '#f59e0b', '#10b981'];
+
+    const compData = candidatesToCompare.map((cName, idx) => {
+      const rowInBairro = bRows.find(r => r.candidato === cName);
+      const votosNoBairro = rowInBairro ? rowInBairro.votos : 0;
+      const percNoBairro = totalBairroVotos > 0 ? (votosNoBairro / totalBairroVotos) * 100 : 0;
+
+      const summaryInfo = dataSummary.allCandidates.find(c => c.nome === cName);
+      const totalCidade = summaryInfo ? summaryInfo.votosTotal : 0;
+      const topBairro = summaryInfo ? summaryInfo.topBairro : '';
+      const topBairroVotos = summaryInfo ? summaryInfo.topBairroVotos : 0;
+      const mediaCidade = totalCidade / 111;
+      const pesoNoCand = totalCidade > 0 ? (votosNoBairro / totalCidade) * 100 : 0;
+
+      return {
+        name: cName,
+        votosNoBairro,
+        percNoBairro,
+        totalCidade,
+        topBairro,
+        topBairroVotos,
+        mediaCidade,
+        pesoNoCand,
+        color: colors[idx % colors.length],
+        status: summaryInfo?.status || '-',
+        partido: summaryInfo?.partido || '-'
+      };
+    });
+
+    if (compareChartType === 'bar') {
+      chart.setOption({
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          formatter: (params: any) => {
+            let res = `<strong>${params[0].axisValue}</strong><br/>`;
+            params.forEach((p: any) => {
+              res += `<span style="color:${p.color}; font-weight:bold;">● ${p.seriesName}:</span> ${Number(p.value).toLocaleString('pt-BR')}<br/>`;
+            });
+            return res;
+          }
+        },
+        legend: {
+          data: compData.map(c => c.name),
+          top: 0,
+          textStyle: { fontSize: 11, fontWeight: 600 }
+        },
+        grid: { left: '3%', right: '4%', bottom: '5%', top: '45px', containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: [
+            `Votos em ${selectedBairro}`,
+            'Média p/ Bairro em Fortaleza',
+            'Pico no Bairro Líder (Reduto)'
+          ],
+          axisLabel: { interval: 0, fontSize: 11, fontWeight: 500 }
+        },
+        yAxis: {
+          type: 'value',
+          axisLabel: { formatter: (v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v.toLocaleString('pt-BR') }
+        },
+        series: compData.map(c => ({
+          name: c.name,
+          type: 'bar',
+          barGap: '15%',
+          itemStyle: { color: c.color, borderRadius: [4, 4, 0, 0] },
+          label: {
+            show: true,
+            position: 'top',
+            formatter: (p: any) => Math.round(p.value).toLocaleString('pt-BR'),
+            fontSize: 10,
+            fontWeight: 'bold'
+          },
+          data: [
+            c.votosNoBairro,
+            Math.round(c.mediaCidade),
+            c.topBairroVotos
+          ]
+        }))
+      }, true);
+    } else {
+      const maxVotosBairro = Math.max(...compData.map(c => c.votosNoBairro), 100) * 1.15;
+      const maxPercBairro = Math.max(...compData.map(c => c.percNoBairro), 5) * 1.25;
+      const maxPesoNoCand = Math.max(...compData.map(c => c.pesoNoCand), 5) * 1.25;
+      const maxMediaCidade = Math.max(...compData.map(c => c.mediaCidade), 50) * 1.15;
+      const maxTotalCidade = Math.max(...compData.map(c => c.totalCidade), 5000) * 1.15;
+
+      chart.setOption({
+        tooltip: { trigger: 'item' },
+        legend: {
+          data: compData.map(c => c.name),
+          top: 0,
+          textStyle: { fontSize: 11, fontWeight: 600 }
+        },
+        radar: {
+          indicator: [
+            { name: `Votos em ${selectedBairro}`, max: Math.ceil(maxVotosBairro) },
+            { name: `% do Eleitorado Local`, max: Math.ceil(maxPercBairro) },
+            { name: `% Peso no Total do Candidato`, max: Math.ceil(maxPesoNoCand) },
+            { name: `Média Capital/Bairro`, max: Math.ceil(maxMediaCidade) },
+            { name: `Total na Cidade`, max: Math.ceil(maxTotalCidade) }
+          ],
+          shape: 'polygon',
+          radius: '65%',
+          axisName: {
+            color: '#334155',
+            fontSize: 11,
+            fontWeight: 600
+          },
+          splitArea: {
+            areaStyle: {
+              color: ['rgba(241, 245, 249, 0.9)', 'rgba(248, 250, 252, 0.9)']
+            }
+          }
+        },
+        series: [{
+          name: 'Comparativo Radar',
+          type: 'radar',
+          data: compData.map(c => ({
+            name: c.name,
+            value: [
+              c.votosNoBairro,
+              parseFloat(c.percNoBairro.toFixed(1)),
+              parseFloat(c.pesoNoCand.toFixed(1)),
+              Math.round(c.mediaCidade),
+              c.totalCidade
+            ],
+            itemStyle: { color: c.color },
+            lineStyle: { width: 2.5 },
+            areaStyle: { opacity: 0.18 }
+          }))
+        }]
+      }, true);
+    }
+
+    const handleResize = () => chart?.resize();
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [activeTab, selectedBairro, compareCand1, compareCand2, compareCand3, compareChartType, allRecords]);
+
+  // Map Zoom Controls
+  const handleMapZoom = (direction: 'in' | 'out' | 'reset') => {
+    const chart = echarts.getInstanceByDom(mapChartRef.current as any);
+    if (!chart) return;
+    if (direction === 'reset') {
+      chart.dispatchAction({ type: 'restore' });
+    } else {
+      const scale = direction === 'in' ? 1.3 : 0.77;
+      chart.dispatchAction({
+        type: 'geoRoam',
+        zoom: scale
+      });
+    }
+  };
+
   // Export CSV
   const handleExportCSV = () => {
     let csv = 'Ano,Turno,Municipio,Numero,Candidato,Partido,Bairro,Votos,% Votos Obtidos,Status\n';
@@ -463,7 +852,7 @@ export default function App() {
             </div>
             <div>
               <span className="text-base font-bold tracking-tight text-slate-900 block leading-tight">Fortaleza Eleições 2024</span>
-              <span className="text-xs text-slate-500 block">Painel Executivo de Votação por Bairro</span>
+              <span className="text-xs text-slate-500 block">Painel Geográfico e Executivo de Votação</span>
             </div>
           </div>
 
@@ -474,6 +863,13 @@ export default function App() {
               className={`hover:text-blue-600 transition-colors whitespace-nowrap pb-1 ${activeTab === 'overview' ? 'text-blue-600 font-semibold border-b-2 border-blue-600' : ''}`}
             >
               Visão Executiva
+            </button>
+            <button
+              onClick={() => setActiveTab('mapa')}
+              className={`hover:text-blue-600 transition-colors whitespace-nowrap pb-1 flex items-center gap-1.5 ${activeTab === 'mapa' ? 'text-blue-600 font-semibold border-b-2 border-blue-600' : ''}`}
+            >
+              <MapIcon className="w-4 h-4 text-emerald-600" />
+              Mapa de Fortaleza
             </button>
             <button
               onClick={() => setActiveTab('redutos')}
@@ -531,15 +927,16 @@ export default function App() {
         </div>
       </header>
 
-      {/* SUB-HEADER / MOBILE NAV */}
+      {/* MOBILE NAV */}
       <div className="md:hidden bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 overflow-x-auto text-xs">
-        {(['overview', 'redutos', 'candidato', 'bairro', 'tabela', 'auditoria'] as const).map(tab => (
+        {(['overview', 'mapa', 'redutos', 'candidato', 'bairro', 'tabela', 'auditoria'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-3 py-1.5 rounded-md whitespace-nowrap font-medium ${activeTab === tab ? 'bg-blue-600 text-white' : 'text-slate-600 bg-slate-100'}`}
           >
             {tab === 'overview' && 'Visão'}
+            {tab === 'mapa' && 'Mapa'}
             {tab === 'redutos' && 'Redutos'}
             {tab === 'candidato' && 'Candidato'}
             {tab === 'bairro' && 'Bairro'}
@@ -552,23 +949,23 @@ export default function App() {
       {/* MAIN VIEWPORT */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 space-y-6 w-full">
 
-        {/* HERO / CONTEXT BANNER */}
+        {/* HERO BANNER */}
         <section className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-xl p-6 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 border border-slate-700/50">
           <div className="space-y-1.5 max-w-3xl">
             <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
               <span>TRE-CE 2024</span>
               <span>·</span>
-              <span>1º Turno</span>
+              <span>1º Turno Proporcional</span>
               <span>·</span>
               <span>Fortaleza / CE</span>
               <span>·</span>
-              <span>Câmara Municipal</span>
+              <span>Georreferenciamento de 111 Bairros</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-              Painel Estratégico de Inteligência Eleitoral: Votação por Bairro
+              Inteligência Territorial e Mapa de Votação por Bairro
             </h1>
             <p className="text-sm text-slate-300 leading-relaxed">
-              Consolidação analítica de <strong>586.560 votos</strong> auditados em <strong>111 bairros</strong> da capital cearense. Cruzamento de métricas contínuas, concentração territorial, correlações e distribuição de bancadas.
+              Consolidação analítica de <strong>586.560 votos</strong> em <strong>111 bairros</strong> da capital cearense. Explore a mancha de votação, colégios eleitorais e os redutos territoriais no mapa cartográfico interativo.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 shrink-0 bg-white/5 p-3.5 rounded-lg border border-white/10">
@@ -577,96 +974,227 @@ export default function App() {
               <div className="text-xl font-bold font-mono text-white mt-0.5 tabular-nums">5.789</div>
             </div>
             <div>
-              <div className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Eleitos / Suplentes</div>
-              <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5 tabular-nums">42 / 12</div>
+              <div className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Bairros Mapeados</div>
+              <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5 tabular-nums">111</div>
             </div>
           </div>
         </section>
 
-        {/* FILTER BAR (Visible for Overview & Tabela) */}
-        {(activeTab === 'overview' || activeTab === 'redutos' || activeTab === 'tabela') && (
-          <section className="bg-white rounded-xl p-5 border border-slate-200 shadow-xs space-y-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-blue-600" />
-                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800">Filtros Cruzados Multidimensionais</h2>
+        {/* TAB: MAPA DE FORTALEZA */}
+        {activeTab === 'mapa' && (
+          <div className="space-y-6">
+            {/* Map Mode Selector Bar */}
+            <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-red-600" />
+                  Visualização Cartográfica Territorial
+                </h2>
+                <p className="text-xs text-slate-500">Passe o mouse ou clique sobre qualquer bairro para inspecionar os votos</p>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono bg-blue-50 text-blue-700 font-semibold px-2.5 py-1 rounded-md border border-blue-200 tabular-nums">
-                  {filteredRecords.length.toLocaleString('pt-BR')} registros ativos
-                </span>
-                <button
-                  onClick={handleResetFilters}
-                  className="text-xs font-semibold text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-md hover:bg-slate-100 transition-colors flex items-center gap-1"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  Limpar
-                </button>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg text-xs font-medium">
+                  <button
+                    onClick={() => setMapMode('volume')}
+                    className={`px-3 py-1.5 rounded-md transition-colors ${mapMode === 'volume' ? 'bg-white text-slate-900 shadow-xs font-semibold' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    Volume Total de Votos
+                  </button>
+                  <button
+                    onClick={() => setMapMode('candidato')}
+                    className={`px-3 py-1.5 rounded-md transition-colors ${mapMode === 'candidato' ? 'bg-white text-slate-900 shadow-xs font-semibold' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    Por Candidato
+                  </button>
+                  <button
+                    onClick={() => setMapMode('vencedor')}
+                    className={`px-3 py-1.5 rounded-md transition-colors ${mapMode === 'vencedor' ? 'bg-white text-slate-900 shadow-xs font-semibold' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    Líder do Bairro
+                  </button>
+                </div>
+
+                {mapMode === 'candidato' && (
+                  <div className="w-56">
+                    <select
+                      value={mapCandidate}
+                      onChange={e => setMapCandidate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                    >
+                      {uniqueCandidates.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">Status Eleitoral</label>
-                <select
-                  value={statusFilter}
-                  onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="ALL">Todos os Resultados (54 candidatos)</option>
-                  <option value="ELEITO">Somente ELEITOS (42 candidatos)</option>
-                  <option value="SUPLENTE">Somente SUPLENTES (12 candidatos)</option>
-                </select>
+            {/* Map Grid: Map Canvas + Bairro Inspector Sidebar */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Map Canvas (2 cols) */}
+              <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-xs p-4 relative flex flex-col min-h-[580px]">
+                {/* Floating Zoom & Action Controls */}
+                <div className="absolute top-6 left-6 z-10 flex flex-col gap-1.5 bg-white/95 backdrop-blur-xs p-1.5 rounded-lg border border-slate-200 shadow-xs">
+                  <button
+                    onClick={() => handleMapZoom('in')}
+                    className="p-1.5 hover:bg-slate-100 rounded text-slate-700 transition-colors"
+                    title="Aproximar Zoom"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleMapZoom('out')}
+                    className="p-1.5 hover:bg-slate-100 rounded text-slate-700 transition-colors"
+                    title="Afastar Zoom"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleMapZoom('reset')}
+                    className="p-1.5 hover:bg-slate-100 rounded text-slate-700 transition-colors border-t border-slate-100 mt-0.5"
+                    title="Redefinir Enquadramento"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Map Title Indicator */}
+                <div className="absolute top-6 right-6 z-10 bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs text-xs">
+                  {mapMode === 'volume' && <span className="font-semibold text-blue-700">Densidade Eleitoral por Bairro</span>}
+                  {mapMode === 'candidato' && <span className="font-semibold text-red-700">Mancha de Votos: {mapCandidate}</span>}
+                  {mapMode === 'vencedor' && <span className="font-semibold text-purple-700">Vereador Mais Votado no Bairro</span>}
+                </div>
+
+                <div ref={mapChartRef} className="w-full flex-1 h-[540px]" />
+                <div className="text-[11px] text-slate-400 mt-2 text-center">
+                  Dica: Use a roda do mouse para aproximar ou arraste para navegar pelo território da cidade. Clique em qualquer bairro para travar o raio-x ao lado.
+                </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">Partido / Legenda</label>
-                <select
-                  value={partyFilter}
-                  onChange={e => { setPartyFilter(e.target.value); setCurrentPage(1); }}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="ALL">Todos os Partidos ({uniqueParties.length})</option>
-                  {uniqueParties.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Bairro Inspector Sidebar (1 col) */}
+              {(() => {
+                const bInfo = bairroSummaryMap[hoveredOrSelectedBairro] || {
+                  totalVotos: 0,
+                  leader: '-',
+                  leaderVotes: 0,
+                  leaderPerc: '0%',
+                  leaderParty: '-',
+                  leaderStatus: '-'
+                };
+                const bRows = allRecords.filter(r => r.bairro === hoveredOrSelectedBairro).sort((a,b) => b.votos - a.votos);
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">Candidato</label>
-                <select
-                  value={candidateFilter}
-                  onChange={e => { setCandidateFilter(e.target.value); setCurrentPage(1); }}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="ALL">Todos os Candidatos ({uniqueCandidates.length})</option>
-                  {uniqueCandidates.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
+                return (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 flex flex-col justify-between space-y-4">
+                    <div className="space-y-4">
+                      <div className="pb-3 border-b border-slate-100">
+                        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Raio-X Territorial</div>
+                        <h3 className="text-xl font-bold text-slate-900 mt-0.5">{hoveredOrSelectedBairro}</h3>
+                        <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 font-mono">
+                          <span>{bInfo.totalVotos.toLocaleString('pt-BR')} votos totais</span>
+                          <span>·</span>
+                          <span>{((bInfo.totalVotos / 586560) * 100).toFixed(2)}% da capital</span>
+                        </div>
+                      </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">Bairro</label>
-                <select
-                  value={bairroFilter}
-                  onChange={e => { setBairroFilter(e.target.value); setCurrentPage(1); }}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="ALL">Todos os Bairros ({uniqueBairros.length})</option>
-                  {uniqueBairros.map(b => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                </select>
-              </div>
+                      {/* Leader Card */}
+                      <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200/80 space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Candidato Vencedor no Bairro</span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-bold text-slate-900 truncate">{bInfo.leader}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${bInfo.leaderStatus === 'ELEITO' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                            {bInfo.leaderStatus}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-600 flex justify-between pt-1">
+                          <span>{bInfo.leaderParty}</span>
+                          <span className="font-mono font-semibold text-blue-700">
+                            {bInfo.leaderVotes.toLocaleString('pt-BR')} votos ({bInfo.leaderPerc})
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Top 5 in Bairro */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center text-xs font-semibold text-slate-700">
+                          <span>Top 5 Vereadores no Bairro</span>
+                          <span className="text-[11px] font-normal text-slate-400">Votos nominais</span>
+                        </div>
+                        <div className="space-y-2 text-xs">
+                          {bRows.slice(0, 5).map((r, idx) => {
+                            const p = bInfo.totalVotos > 0 ? (r.votos / bInfo.totalVotos) * 100 : 0;
+                            return (
+                              <div key={r.candidato} className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-medium text-slate-800 truncate">
+                                    <span className="text-slate-400 font-mono mr-1.5">{idx + 1}.</span>
+                                    {r.candidato}
+                                  </span>
+                                  <span className="font-mono text-slate-900 font-semibold">{r.votos.toLocaleString('pt-BR')}</span>
+                                </div>
+                                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-blue-600 rounded-full"
+                                    style={{ width: `${Math.min(p * 2.5, 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedBairro(hoveredOrSelectedBairro);
+                          setActiveTab('bairro');
+                        }}
+                        className="w-full py-2 px-3 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-center shadow-xs"
+                      >
+                        Ver Perfil Completo do Bairro
+                      </button>
+                      <button
+                        onClick={() => {
+                          setBairroFilter(hoveredOrSelectedBairro);
+                          setActiveTab('tabela');
+                        }}
+                        className="w-full py-2 px-3 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-center"
+                      >
+                        Filtrar Registros na Tabela
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
-          </section>
+          </div>
         )}
 
         {/* TAB 1: VISÃO GERAL */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* Interactive Map Callout Banner */}
+            <div className="bg-blue-50 border border-blue-200/80 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <MapIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-blue-950">Novo Mapa Cartográfico de Fortaleza Disponível</h3>
+                  <p className="text-xs text-blue-700">Visualize a distribuição espacial de votos por bairro, densidade e redutos eleitorais.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveTab('mapa')}
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors whitespace-nowrap shadow-xs"
+              >
+                Abrir Mapa Completo
+              </button>
+            </div>
+
             {/* KPI Cards Strip */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -826,7 +1354,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: REDUTOS ELEITORAIS */}
+        {/* TAB: REDUTOS ELEITORAIS */}
         {activeTab === 'redutos' && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-xs space-y-3">
@@ -894,7 +1422,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 3: RAIO-X POR CANDIDATO */}
+        {/* TAB: RAIO-X POR CANDIDATO */}
         {activeTab === 'candidato' && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -999,7 +1527,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 4: ANÁLISE POR BAIRRO */}
+        {/* TAB: ANÁLISE POR BAIRRO */}
         {activeTab === 'bairro' && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1046,7 +1574,7 @@ export default function App() {
 
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
                       <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Candidato Vencedor</span>
-                      <span className="text-base font-bold text-slate-900 block mt-1 truncate">{leader.candidato}</span>
+                      <span className="text-base sm:text-lg font-bold text-slate-900 block mt-1 truncate">{leader.candidato}</span>
                       <span className="text-xs text-slate-500 font-mono mt-0.5 block">{leader.partido} ({leader.status})</span>
                     </div>
 
@@ -1090,13 +1618,172 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* SEÇÃO COMPARADOR DE ATÉ 3 CANDIDATOS NO BAIRRO */}
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between pb-3 border-b border-slate-100 gap-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-blue-600" />
+                          Comparativo Direto de Votação em {selectedBairro} (Até 3 Candidatos)
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          Compare o volume, a representatividade percentual e os indicadores eleitorais dentro deste bairro
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <button
+                          onClick={() => {
+                            if (bRows[0]) setCompareCand1(bRows[0].candidato);
+                            if (bRows[1]) setCompareCand2(bRows[1].candidato);
+                            if (bRows[2]) setCompareCand3(bRows[2].candidato);
+                          }}
+                          className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1"
+                          title="Carregar os 3 vereadores mais votados deste bairro"
+                        >
+                          <RotateCcw className="w-3 h-3 text-slate-500" />
+                          Top 3 Deste Bairro
+                        </button>
+
+                        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg text-xs font-medium">
+                          <button
+                            onClick={() => setCompareChartType('bar')}
+                            className={`px-3 py-1 rounded-md transition-colors ${compareChartType === 'bar' ? 'bg-white text-slate-900 shadow-xs font-semibold' : 'text-slate-600 hover:text-slate-900'}`}
+                          >
+                            Barras Agrupadas
+                          </button>
+                          <button
+                            onClick={() => setCompareChartType('radar')}
+                            className={`px-3 py-1 rounded-md transition-colors ${compareChartType === 'radar' ? 'bg-white text-slate-900 shadow-xs font-semibold' : 'text-slate-600 hover:text-slate-900'}`}
+                          >
+                            Gráfico de Radar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Dropdowns for up to 3 candidates */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      {/* Cand 1 */}
+                      <div className="p-2.5 rounded-lg border border-blue-200 bg-blue-50/30">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                          <label className="font-bold text-blue-900">Candidato A (Azul)</label>
+                        </div>
+                        <select
+                          value={compareCand1}
+                          onChange={e => setCompareCand1(e.target.value)}
+                          className="w-full bg-white border border-blue-200 rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Nenhum</option>
+                          {uniqueCandidates.map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Cand 2 */}
+                      <div className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/30">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                          <label className="font-bold text-amber-900">Candidato B (Laranja)</label>
+                        </div>
+                        <select
+                          value={compareCand2}
+                          onChange={e => setCompareCand2(e.target.value)}
+                          className="w-full bg-white border border-amber-200 rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="">Nenhum</option>
+                          {uniqueCandidates.map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Cand 3 */}
+                      <div className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/30">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                          <label className="font-bold text-emerald-900">Candidato C (Verde)</label>
+                        </div>
+                        <select
+                          value={compareCand3}
+                          onChange={e => setCompareCand3(e.target.value)}
+                          className="w-full bg-white border border-emerald-200 rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="">Nenhum</option>
+                          {uniqueCandidates.map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Chart & Metrics Grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
+                      <div className="lg:col-span-2 bg-slate-50/60 rounded-xl border border-slate-200 p-3 min-h-[360px] flex flex-col justify-center">
+                        <div ref={bairroCompareChartRef} className="w-full h-80" />
+                      </div>
+
+                      {/* Detailed comparison cards */}
+                      <div className="space-y-3">
+                        {[
+                          { name: compareCand1, color: '#2563eb', border: 'border-blue-200', bg: 'bg-blue-50/40' },
+                          { name: compareCand2, color: '#f59e0b', border: 'border-amber-200', bg: 'bg-amber-50/40' },
+                          { name: compareCand3, color: '#10b981', border: 'border-emerald-200', bg: 'bg-emerald-50/40' }
+                        ].filter(item => Boolean(item.name)).map(item => {
+                          const candRow = bRows.find(r => r.candidato === item.name);
+                          const votosNoB = candRow ? candRow.votos : 0;
+                          const percNoB = totalBairroVotos > 0 ? (votosNoB / totalBairroVotos) * 100 : 0;
+                          const posNoB = bRows.findIndex(r => r.candidato === item.name) + 1;
+                          const info = dataSummary.allCandidates.find(c => c.nome === item.name);
+                          const totalCid = info ? info.votosTotal : 0;
+                          const pesoNoC = totalCid > 0 ? (votosNoB / totalCid) * 100 : 0;
+
+                          return (
+                            <div key={item.name} className={`p-3.5 rounded-xl border ${item.border} ${item.bg} space-y-2 text-xs`}>
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <span className="font-bold text-slate-900 block text-sm">{item.name}</span>
+                                  <span className="text-[11px] text-slate-500 font-mono">{info?.partido || '-'} · {info?.numero || '-'}</span>
+                                </div>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${info?.status === 'ELEITO' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                                  {info?.status || '-'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200/60 text-[11px]">
+                                <div>
+                                  <span className="text-slate-500 block">Votos em {selectedBairro}:</span>
+                                  <span className="font-mono font-bold text-slate-900 text-xs">{votosNoB.toLocaleString('pt-BR')} ({percNoB.toFixed(1)}%)</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500 block">Posição no Bairro:</span>
+                                  <span className="font-mono font-bold text-slate-800 text-xs">#{posNoB > 0 ? posNoB : '-'} lugar</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500 block">Total na Cidade:</span>
+                                  <span className="font-mono font-semibold text-slate-700">{totalCid.toLocaleString('pt-BR')} votos</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500 block">Peso deste Bairro:</span>
+                                  <span className="font-mono font-semibold text-slate-700">{pesoNoC.toFixed(1)}% do total</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               );
             })()}
           </div>
         )}
 
-        {/* TAB 5: TABELA ANALÍTICA */}
+        {/* TAB: TABELA ANALÍTICA */}
         {activeTab === 'tabela' && (
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-0">
             <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1222,7 +1909,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 6: AUDITORIA & METODOLOGIA */}
+        {/* TAB: AUDITORIA & METODOLOGIA */}
         {activeTab === 'auditoria' && (
           <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-xs space-y-6 text-xs text-slate-700">
             <div className="pb-4 border-b border-slate-100">
@@ -1322,7 +2009,7 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
                 <h4 className="font-bold text-slate-900 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                   Qualidade e Integridade dos Dados
                 </h4>
                 <ul className="list-disc list-inside space-y-1 text-slate-600 leading-relaxed">
@@ -1335,7 +2022,7 @@ export default function App() {
 
               <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
                 <h4 className="font-bold text-slate-900 flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-amber-600" />
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
                   Tratamento de Inconsistências de Grafia
                 </h4>
                 <p className="text-slate-600 leading-relaxed">
@@ -1396,7 +2083,7 @@ export default function App() {
               Download do HTML Autocontido
             </a>
             <span>·</span>
-            <span>Versão 1.0.0</span>
+            <span>Versão 1.2.0 com Mapa Cartográfico</span>
           </div>
         </div>
       </footer>

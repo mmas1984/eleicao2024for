@@ -40,11 +40,9 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                 <p className="text-xs text-slate-500">Ocorreu um problema ao carregar o painel interativo.</p>
               </div>
             </div>
-
             <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-600 break-words">
               {this.state.error?.message || 'Erro inesperado'}
             </div>
-
             <div className="flex items-center gap-2 pt-2">
               <button
                 onClick={() => window.location.reload()}
@@ -67,7 +65,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
-createRoot(document.getElementById('root')!).render(
+let rootEl = document.getElementById('root');
+if (!rootEl) {
+  rootEl = document.createElement('div');
+  rootEl.id = 'root';
+  document.body.prepend(rootEl);
+}
+
+createRoot(rootEl).render(
   <React.StrictMode>
     <ErrorBoundary>
       <App />

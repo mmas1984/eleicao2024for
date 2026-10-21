@@ -2,6 +2,7 @@ const fs = require('fs');
 
 const dataSummary = JSON.parse(fs.readFileSync('src/data-summary.json', 'utf8'));
 const records = JSON.parse(fs.readFileSync('src/records.json', 'utf8'));
+const mapGeo = JSON.parse(fs.readFileSync('src/fortaleza_map.json', 'utf8'));
 
 // Format records lightly to keep file efficient while keeping 100% of the rows
 // [ano, turno, municipio, numero, candidato, bairro, votos, perc, status]
@@ -20,7 +21,7 @@ const htmlContent = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard Executivo - Análise Eleitoral Fortaleza 2024</title>
-  <meta name="description" content="Análise exploratória e inteligência de dados de votação por bairro em Fortaleza 2024.">
+  <meta name="description" content="Análise exploratória e inteligência de dados de votação por bairro em Fortaleza 2024 com mapa cartográfico interativo.">
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Apache ECharts CDN -->
@@ -58,13 +59,14 @@ const htmlContent = `<!DOCTYPE html>
         </div>
         <div>
           <span class="text-base font-bold tracking-tight text-slate-900 block leading-tight">Fortaleza Eleições 2024</span>
-          <span class="text-xs text-slate-500 block">Painel de Inteligência de Votação por Bairro</span>
+          <span class="text-xs text-slate-500 block">Painel Geográfico de Votação por Bairro</span>
         </div>
       </div>
 
       <!-- Zone 2: Navigation / Scope -->
       <nav class="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
         <a href="#kpis" class="hover:text-blue-600 transition-colors whitespace-nowrap">Indicadores</a>
+        <a href="#mapa-secao" class="hover:text-blue-600 transition-colors whitespace-nowrap font-semibold text-blue-600">Mapa de Fortaleza</a>
         <a href="#graficos" class="hover:text-blue-600 transition-colors whitespace-nowrap">Gráficos</a>
         <a href="#insights" class="hover:text-blue-600 transition-colors whitespace-nowrap">Insights Estratégicos</a>
         <a href="#tabela" class="hover:text-blue-600 transition-colors whitespace-nowrap">Tabela Detalhada</a>
@@ -78,7 +80,7 @@ const htmlContent = `<!DOCTYPE html>
         </button>
         <button onclick="window.print()" class="px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-xs">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-          Imprimir / Relatório
+          Imprimir Relatório
         </button>
       </div>
     </div>
@@ -100,10 +102,10 @@ const htmlContent = `<!DOCTYPE html>
           <span>54 Candidatos Avaliados</span>
         </div>
         <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-          Análise Territorial de Votação: Eleições 2024
+          Análise Territorial e Mapa de Votação por Bairro
         </h1>
         <p class="text-sm text-slate-300 leading-relaxed">
-          Exploração aprofundada de <strong>586.560 votos</strong> distribuídos em <strong>111 bairros</strong> de Fortaleza. Mapeamento de redutos eleitorais, dispersão territorial e eficiência partidária para vereadores eleitos e suplentes.
+          Exploração aprofundada de <strong>586.560 votos</strong> distribuídos em <strong>111 bairros</strong> de Fortaleza. Mapeamento cartográfico com mancha de votos, densidade eleitoral e perfil dos redutos de cada vereador.
         </p>
       </div>
       <div class="grid grid-cols-2 gap-3 shrink-0 bg-white/5 p-3.5 rounded-lg border border-white/10">
@@ -123,7 +125,7 @@ const htmlContent = `<!DOCTYPE html>
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
         <div>
           <h2 class="text-sm font-bold uppercase tracking-wider text-slate-800">Controles de Filtro Dinâmicos</h2>
-          <p class="text-xs text-slate-500">Selecione filtros para recalcular os KPIs e gráficos em tempo real</p>
+          <p class="text-xs text-slate-500">Selecione filtros para recalcular os KPIs, o mapa e os gráficos em tempo real</p>
         </div>
         <div class="flex items-center gap-2">
           <button onclick="resetFilters()" class="text-xs font-semibold text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-md hover:bg-slate-100 transition-colors">
@@ -136,7 +138,6 @@ const htmlContent = `<!DOCTYPE html>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-        <!-- Status Filter -->
         <div>
           <label class="block font-semibold text-slate-700 mb-1.5">Status Eleitoral</label>
           <select id="statusFilter" onchange="applyFilters()" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all">
@@ -146,7 +147,6 @@ const htmlContent = `<!DOCTYPE html>
           </select>
         </div>
 
-        <!-- Party Filter -->
         <div>
           <label class="block font-semibold text-slate-700 mb-1.5">Partido / Legenda</label>
           <select id="partyFilter" onchange="applyFilters()" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all">
@@ -154,7 +154,6 @@ const htmlContent = `<!DOCTYPE html>
           </select>
         </div>
 
-        <!-- Candidate Filter -->
         <div>
           <label class="block font-semibold text-slate-700 mb-1.5">Candidato Específico</label>
           <select id="candidateFilter" onchange="applyFilters()" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all">
@@ -162,7 +161,6 @@ const htmlContent = `<!DOCTYPE html>
           </select>
         </div>
 
-        <!-- Bairro Filter -->
         <div>
           <label class="block font-semibold text-slate-700 mb-1.5">Bairro de Fortaleza</label>
           <select id="bairroFilter" onchange="applyFilters()" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all">
@@ -174,49 +172,42 @@ const htmlContent = `<!DOCTYPE html>
 
     <!-- KPIS SECTION (BIG NUMBERS) -->
     <section id="kpis" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-      <!-- Total Votos -->
       <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Total de Votos</span>
         <span id="kpiTotalVotos" class="text-xl sm:text-2xl font-bold font-mono-num text-slate-900 block mt-1">586.560</span>
         <span class="text-[10px] text-slate-400 mt-0.5 block">100% dos votos na base</span>
       </div>
 
-      <!-- Média por Bairro -->
       <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Média p/ Linha</span>
         <span id="kpiAvgVotos" class="text-xl sm:text-2xl font-bold font-mono-num text-slate-900 block mt-1">101,3</span>
         <span class="text-[10px] text-slate-400 mt-0.5 block">Votos médios/bairro</span>
       </div>
 
-      <!-- Mediana -->
       <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Mediana</span>
         <span id="kpiMedianVotos" class="text-xl sm:text-2xl font-bold font-mono-num text-slate-900 block mt-1">41</span>
         <span class="text-[10px] text-slate-400 mt-0.5 block">Valor central típico</span>
       </div>
 
-      <!-- Desvio Padrão -->
       <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Desvio Padrão</span>
         <span id="kpiStdDev" class="text-xl sm:text-2xl font-bold font-mono-num text-amber-700 block mt-1">235,4</span>
         <span class="text-[10px] text-slate-400 mt-0.5 block">Alta dispersão (redutos)</span>
       </div>
 
-      <!-- Máximo num Bairro -->
       <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Pico em Bairro</span>
         <span id="kpiMaxVotos" class="text-xl sm:text-2xl font-bold font-mono-num text-blue-700 block mt-1">4.978</span>
         <span id="kpiMaxDetail" class="text-[10px] text-slate-400 mt-0.5 block truncate" title="Chiquinho / P. Ayrton Senna">Chiquinho dos Carneiros</span>
       </div>
 
-      <!-- Bairro Líder em Votos -->
       <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Maior Bairro</span>
         <span id="kpiTopBairroName" class="text-base sm:text-lg font-bold text-slate-900 block mt-1 truncate" title="MESSEJANA">MESSEJANA</span>
         <span id="kpiTopBairroVotos" class="text-[10px] font-mono-num text-slate-500 mt-0.5 block">20.242 votos</span>
       </div>
 
-      <!-- Votos de Eleitos (%) -->
       <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">% Eleitos</span>
         <span id="kpiEleitosPerc" class="text-xl sm:text-2xl font-bold font-mono-num text-emerald-700 block mt-1">86,1%</span>
@@ -224,10 +215,67 @@ const htmlContent = `<!DOCTYPE html>
       </div>
     </section>
 
+    <!-- MAP SECTION -->
+    <section id="mapa-secao" class="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+      <div class="flex flex-col md:flex-row md:items-center justify-between pb-3 border-b border-slate-100 gap-3">
+        <div>
+          <h2 class="text-base font-bold text-slate-900">Mapa Cartográfico Interativo de Fortaleza</h2>
+          <p class="text-xs text-slate-500">Passe o mouse ou clique sobre qualquer bairro para visualizar a votação e o candidato vencedor</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1 p-1 bg-slate-100 rounded-lg text-xs font-medium">
+            <button id="btnMapVolume" onclick="changeMapMode('volume')" class="px-3 py-1.5 rounded-md bg-white text-slate-900 shadow-xs font-semibold">Volume de Votos</button>
+            <button id="btnMapCand" onclick="changeMapMode('candidato')" class="px-3 py-1.5 rounded-md text-slate-600 hover:text-slate-900">Por Candidato</button>
+          </div>
+          <div id="mapCandSelectWrapper" class="hidden w-52">
+            <select id="mapCandSelect" onchange="updateMapChart()" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800">
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 relative bg-slate-50/50 rounded-xl border border-slate-200 p-2 min-h-[500px]">
+          <div id="mapChart" class="w-full h-[480px]"></div>
+        </div>
+
+        <!-- Bairro Details Card in Map -->
+        <div class="bg-slate-50 p-5 rounded-xl border border-slate-200 flex flex-col justify-between space-y-4">
+          <div class="space-y-3">
+            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Bairro em Foco</span>
+            <h3 id="mapInspectorName" class="text-xl font-bold text-slate-900">MESSEJANA</h3>
+            <div class="text-xs text-slate-600 space-y-1 pt-1 border-t border-slate-200">
+              <div class="flex justify-between">
+                <span>Votos Totais:</span>
+                <span id="mapInspectorTotal" class="font-mono-num font-bold text-slate-900">20.242</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Candidato Líder:</span>
+                <span id="mapInspectorLeader" class="font-bold text-blue-700">MARCEL COLARES</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Votação do Líder:</span>
+                <span id="mapInspectorLeaderVotes" class="font-mono-num text-slate-800">4.009 (19,8%)</span>
+              </div>
+            </div>
+
+            <div class="pt-2">
+              <span class="text-xs font-semibold text-slate-700 block mb-2">Top 5 Candidatos no Bairro:</span>
+              <div id="mapInspectorTop5" class="space-y-2 text-xs">
+                <!-- Filled by JS -->
+              </div>
+            </div>
+          </div>
+
+          <button onclick="filterByFocusedBairro()" class="w-full py-2 px-3 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-center shadow-xs">
+            Ver Registros deste Bairro na Tabela
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- CHARTS GRID -->
     <section id="graficos" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      
-      <!-- Chart 1: Ranking dos Top Candidatos -->
       <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
         <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
           <div>
@@ -239,7 +287,6 @@ const htmlContent = `<!DOCTYPE html>
         <div id="chartCandidates" class="w-full h-80"></div>
       </div>
 
-      <!-- Chart 2: Top Bairros por Volume de Votos -->
       <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
         <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
           <div>
@@ -251,7 +298,6 @@ const htmlContent = `<!DOCTYPE html>
         <div id="chartBairros" class="w-full h-80"></div>
       </div>
 
-      <!-- Chart 3: Distribuição por Partido -->
       <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
         <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
           <div>
@@ -263,7 +309,6 @@ const htmlContent = `<!DOCTYPE html>
         <div id="chartPartidos" class="w-full h-80"></div>
       </div>
 
-      <!-- Chart 4: Análise de Concentração / Reduto Eleitoral -->
       <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
         <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
           <div>
@@ -274,7 +319,6 @@ const htmlContent = `<!DOCTYPE html>
         </div>
         <div id="chartConcentration" class="w-full h-80"></div>
       </div>
-
     </section>
 
     <!-- STRATEGIC INSIGHTS SECTION -->
@@ -285,7 +329,6 @@ const htmlContent = `<!DOCTYPE html>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-        <!-- Insight 1 -->
         <div class="bg-slate-50 p-4 rounded-lg border border-slate-200/80 space-y-2">
           <div class="flex items-center justify-between">
             <span class="font-bold text-blue-900 uppercase tracking-wider text-[11px]">1. Fenômeno dos Hiper-Redutos</span>
@@ -296,29 +339,26 @@ const htmlContent = `<!DOCTYPE html>
           </p>
         </div>
 
-        <!-- Insight 2 -->
         <div class="bg-slate-50 p-4 rounded-lg border border-slate-200/80 space-y-2">
           <div class="flex items-center justify-between">
             <span class="font-bold text-emerald-900 uppercase tracking-wider text-[11px]">2. Estratégia de Capilaridade</span>
             <span class="font-mono-num font-semibold text-emerald-700 bg-emerald-100/60 px-1.5 py-0.5 rounded text-[10px]">Dispersão</span>
           </div>
           <p class="text-slate-600 leading-relaxed">
-            Em contraste com os hiper-redutos, os líderes gerais <strong>Priscila Costa (PL - 36.226 votos)</strong> e <strong>Gabriel Biologia (PSOL - 30.682 votos)</strong> tiveram forte capilaridade por toda a capital. Priscila teve seu bairro máximo com apenas 3,4% do total (Messejana com 1.214 votos), pontuando expressivamente em dezenas de bairros da periferia e áreas centrais.
+            Em contraste com os hiper-redutos, os líderes gerais <strong>Priscila Costa (PL - 36.226 votos)</strong> e <strong>Gabriel Biologia (PSOL - 30.682 votos)</strong> tiveram forte capilaridade por toda a capital. Priscila teve seu bairro máximo com apenas 3,4% do total (Messejana com 1.214 votos), pontuando expressivamente em dezenas de bairros.
           </p>
         </div>
 
-        <!-- Insight 3 -->
         <div class="bg-slate-50 p-4 rounded-lg border border-slate-200/80 space-y-2">
           <div class="flex items-center justify-between">
             <span class="font-bold text-indigo-900 uppercase tracking-wider text-[11px]">3. Polarização Geográfica-Social</span>
             <span class="font-mono-num font-semibold text-indigo-700 bg-indigo-100/60 px-1.5 py-0.5 rounded text-[10px]">Segmentação</span>
           </div>
           <p class="text-slate-600 leading-relaxed">
-            Em bairros de alta renda da Zona Leste como <em>Aldeota</em> e <em>Meireles</em>, destacam-se amplamente <strong>Gabriel Biologia (2.243 votos na Aldeota)</strong>, <strong>Bella Carmelo (1.838 votos)</strong> e <strong>Marcelo Mendes (947 votos)</strong>. Já na Zona Sul/Oeste (<em>Messejana</em>, <em>Conjunto Ceará I</em>, <em>Mondubim</em>), dominam nomes do <strong>PDT</strong>, <strong>AVANTE</strong> e lideranças comunitárias.
+            Em bairros nobres da Zona Leste como <em>Aldeota</em> e <em>Meireles</em>, destacam-se <strong>Gabriel Biologia (2.243 votos na Aldeota)</strong>, <strong>Bella Carmelo (1.838 votos)</strong> e <strong>Marcelo Mendes (947 votos)</strong>. Já na Zona Sul/Oeste (<em>Messejana</em>, <em>Conjunto Ceará I</em>, <em>Mondubim</em>), dominam nomes do <strong>PDT</strong>, <strong>AVANTE</strong> e lideranças comunitárias.
           </p>
         </div>
 
-        <!-- Insight 4 -->
         <div class="bg-slate-50 p-4 rounded-lg border border-slate-200/80 space-y-2">
           <div class="flex items-center justify-between">
             <span class="font-bold text-amber-900 uppercase tracking-wider text-[11px]">4. Suplentes com Força Local</span>
@@ -363,7 +403,6 @@ const htmlContent = `<!DOCTYPE html>
             </tr>
           </thead>
           <tbody id="tableBody" class="divide-y divide-slate-100 font-normal">
-            <!-- Populated via JavaScript -->
           </tbody>
         </table>
       </div>
@@ -385,7 +424,7 @@ const htmlContent = `<!DOCTYPE html>
   <footer class="bg-white border-t border-slate-200 mt-12 py-6 text-xs text-slate-500">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
       <div>
-        <p class="font-medium text-slate-700">Eleições Fortaleza 2024 · Análise Estatística Territorial</p>
+        <p class="font-medium text-slate-700">Eleições Fortaleza 2024 · Inteligência Territorial de Votação com Mapa</p>
         <p class="text-[11px] text-slate-400 mt-0.5">Fonte dos dados tabulados: Tribunal Regional Eleitoral do Ceará (TRE-CE) / Apuração Bairro a Bairro.</p>
       </div>
       <div class="flex items-center gap-4 text-slate-600">
@@ -398,9 +437,11 @@ const htmlContent = `<!DOCTYPE html>
 
   <!-- EMBEDDED REAL DATA & JAVASCRIPT LOGIC -->
   <script>
-    // Embedded exact audited dataset
     const DATA_SUMMARY = ${JSON.stringify(dataSummary)};
     const RAW_RECORDS = ${JSON.stringify(compactRecords)};
+    const FORTALEZA_GEO = ${JSON.stringify(mapGeo)};
+
+    echarts.registerMap('fortaleza', FORTALEZA_GEO);
 
     const PARTIDO_MAP = {
       '10': 'REPUBLICANOS', '11': 'PP', '12': 'PDT', '13': 'PT', '14': 'PTB',
@@ -411,7 +452,6 @@ const htmlContent = `<!DOCTYPE html>
       '55': 'PSD', '70': 'AVANTE', '77': 'SOLIDARIEDADE'
     };
 
-    // Normalized records
     let fullList = RAW_RECORDS.map(r => ({
       numero: r[0],
       candidato: r[1],
@@ -428,12 +468,15 @@ const htmlContent = `<!DOCTYPE html>
     let sortColumnIndex = 4;
     let sortAsc = false;
 
-    // Charts instances
-    let chartCand, chartBairro, chartParty, chartConcentration;
+    // Map state
+    let mapMode = 'volume';
+    let currentMapCandidate = 'PRISCILA COSTA';
+    let focusedBairro = 'MESSEJANA';
 
-    // Initialize Dropdowns
+    // Charts instances
+    let chartCand, chartBairro, chartParty, chartConcentration, chartMap;
+
     function initDropdowns() {
-      // Parties
       const parties = [...new Set(fullList.map(r => r.partido))].sort();
       const partySelect = document.getElementById('partyFilter');
       parties.forEach(p => {
@@ -443,17 +486,22 @@ const htmlContent = `<!DOCTYPE html>
         partySelect.appendChild(opt);
       });
 
-      // Candidates
       const cands = [...new Set(fullList.map(r => r.candidato))].sort();
       const candSelect = document.getElementById('candidateFilter');
+      const mapCandSelect = document.getElementById('mapCandSelect');
       cands.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c;
         opt.textContent = c;
         candSelect.appendChild(opt);
+
+        const mapOpt = document.createElement('option');
+        mapOpt.value = c;
+        mapOpt.textContent = c;
+        if (c === currentMapCandidate) mapOpt.selected = true;
+        mapCandSelect.appendChild(mapOpt);
       });
 
-      // Bairros
       const bairros = [...new Set(fullList.map(r => r.bairro))].sort();
       const bairroSelect = document.getElementById('bairroFilter');
       bairros.forEach(b => {
@@ -464,7 +512,6 @@ const htmlContent = `<!DOCTYPE html>
       });
     }
 
-    // Apply Filters
     function applyFilters() {
       const status = document.getElementById('statusFilter').value;
       const party = document.getElementById('partyFilter').value;
@@ -489,6 +536,7 @@ const htmlContent = `<!DOCTYPE html>
       currentPage = 1;
       updateKPIs();
       updateCharts();
+      updateMapChart();
       renderTable();
     }
 
@@ -505,7 +553,6 @@ const htmlContent = `<!DOCTYPE html>
       applyFilters();
     }
 
-    // Update KPIs based on filteredRecords
     function updateKPIs() {
       const totalVotos = filteredRecords.reduce((acc, r) => acc + r.votos, 0);
       const totalRows = filteredRecords.length;
@@ -540,7 +587,6 @@ const htmlContent = `<!DOCTYPE html>
       document.getElementById('kpiMaxDetail').textContent = maxRow.candidato + ' (' + maxRow.bairro + ')';
       document.getElementById('kpiMaxDetail').title = maxRow.candidato + ' no bairro ' + maxRow.bairro;
 
-      // Group by Bairro to get top bairro in current slice
       const bMap = {};
       filteredRecords.forEach(r => {
         bMap[r.bairro] = (bMap[r.bairro] || 0) + r.votos;
@@ -551,29 +597,169 @@ const htmlContent = `<!DOCTYPE html>
         document.getElementById('kpiTopBairroVotos').textContent = topBairroEntry[1].toLocaleString('pt-BR') + ' votos';
       }
 
-      // Votos de eleitos %
       const votosEleitos = filteredRecords.filter(r => r.status === 'ELEITO').reduce((acc, r) => acc + r.votos, 0);
       const percEleitos = totalVotos > 0 ? ((votosEleitos / totalVotos) * 100).toFixed(1) : '0';
       document.getElementById('kpiEleitosPerc').textContent = percEleitos.replace('.', ',') + '%';
     }
 
-    // Initialize Echarts
     function initCharts() {
       chartCand = echarts.init(document.getElementById('chartCandidates'));
       chartBairro = echarts.init(document.getElementById('chartBairros'));
       chartParty = echarts.init(document.getElementById('chartPartidos'));
       chartConcentration = echarts.init(document.getElementById('chartConcentration'));
+      chartMap = echarts.init(document.getElementById('chartMap'));
+
+      chartMap.on('click', (params) => {
+        if (params.name) {
+          updateFocusedBairro(params.name);
+        }
+      });
 
       window.addEventListener('resize', () => {
-        chartCand.resize();
-        chartBairro.resize();
-        chartParty.resize();
-        chartConcentration.resize();
+        chartCand?.resize();
+        chartBairro?.resize();
+        chartParty?.resize();
+        chartConcentration?.resize();
+        chartMap?.resize();
       });
     }
 
+    function changeMapMode(mode) {
+      mapMode = mode;
+      document.getElementById('btnMapVolume').className = mode === 'volume' ?
+        'px-3 py-1.5 rounded-md bg-white text-slate-900 shadow-xs font-semibold' : 'px-3 py-1.5 rounded-md text-slate-600 hover:text-slate-900';
+      document.getElementById('btnMapCand').className = mode === 'candidato' ?
+        'px-3 py-1.5 rounded-md bg-white text-slate-900 shadow-xs font-semibold' : 'px-3 py-1.5 rounded-md text-slate-600 hover:text-slate-900';
+
+      const candWrapper = document.getElementById('mapCandSelectWrapper');
+      if (mode === 'candidato') {
+        candWrapper.classList.remove('hidden');
+      } else {
+        candWrapper.classList.add('hidden');
+      }
+      updateMapChart();
+    }
+
+    function updateMapChart() {
+      if (!chartMap) return;
+      const cand = document.getElementById('mapCandSelect').value || currentMapCandidate;
+      currentMapCandidate = cand;
+
+      let mapData = [];
+      let maxVal = 21000;
+      let colors = ['#eff6ff', '#93c5fd', '#3b82f6', '#1d4ed8', '#172554'];
+
+      const bairroData = {};
+      fullList.forEach(r => {
+        if (!bairroData[r.bairro]) bairroData[r.bairro] = { total: 0, leader: '', leaderVotes: 0, candVotes: 0 };
+        bairroData[r.bairro].total += r.votos;
+        if (r.votos > bairroData[r.bairro].leaderVotes) {
+          bairroData[r.bairro].leaderVotes = r.votos;
+          bairroData[r.bairro].leader = r.candidato;
+        }
+        if (r.candidato === currentMapCandidate) {
+          bairroData[r.bairro].candVotes += r.votos;
+        }
+      });
+
+      if (mapMode === 'volume') {
+        mapData = Object.entries(bairroData).map(([bairro, info]) => ({
+          name: bairro,
+          value: info.total,
+          leader: info.leader,
+          leaderVotes: info.leaderVotes,
+          leaderPerc: info.total > 0 ? ((info.leaderVotes / info.total) * 100).toFixed(1) + '%' : '0%'
+        }));
+      } else {
+        colors = ['#fef2f2', '#fca5a5', '#ef4444', '#b91c1c', '#7f1d1d'];
+        maxVal = Math.max(...Object.values(bairroData).map(b => b.candVotes), 500);
+        mapData = Object.entries(bairroData).map(([bairro, info]) => ({
+          name: bairro,
+          value: info.candVotes,
+          candidateName: currentMapCandidate,
+          totalBairro: info.total,
+          candPerc: info.total > 0 ? ((info.candVotes / info.total) * 100).toFixed(1) + '%' : '0%'
+        }));
+      }
+
+      chartMap.setOption({
+        tooltip: {
+          trigger: 'item',
+          formatter: (p) => {
+            if (!p.data) return '<strong>' + p.name + '</strong>';
+            if (mapMode === 'volume') {
+              return '<strong>' + p.name + '</strong><br/>Total: ' + p.value.toLocaleString('pt-BR') + ' votos<br/>Líder: ' + p.data.leader + ' (' + p.data.leaderVotes.toLocaleString('pt-BR') + ' · ' + p.data.leaderPerc + ')';
+            } else {
+              return '<strong>' + p.name + '</strong><br/>Votos de ' + p.data.candidateName + ': ' + p.value.toLocaleString('pt-BR') + ' (' + p.data.candPerc + ' do bairro)';
+            }
+          }
+        },
+        visualMap: {
+          min: 0,
+          max: maxVal,
+          text: ['Alto', 'Baixo'],
+          realtime: false,
+          calculable: true,
+          inRange: { color: colors },
+          textStyle: { fontSize: 10 }
+        },
+        series: [{
+          type: 'map',
+          map: 'fortaleza',
+          roam: true,
+          scaleLimit: { min: 0.8, max: 5 },
+          itemStyle: { borderColor: '#cbd5e1', areaColor: '#f1f5f9' },
+          emphasis: {
+            label: { show: true, fontWeight: 'bold' },
+            itemStyle: { areaColor: '#fde047' }
+          },
+          data: mapData
+        }]
+      }, true);
+
+      updateFocusedBairro(focusedBairro);
+    }
+
+    function updateFocusedBairro(bairroName) {
+      focusedBairro = bairroName;
+      document.getElementById('mapInspectorName').textContent = bairroName;
+
+      const rows = fullList.filter(r => r.bairro === bairroName).sort((a,b) => b.votos - a.votos);
+      const total = rows.reduce((acc, r) => acc + r.votos, 0);
+      const leader = rows[0] || { candidato: '-', votos: 0 };
+      const leaderPerc = total > 0 ? ((leader.votos / total) * 100).toFixed(1) + '%' : '0%';
+
+      document.getElementById('mapInspectorTotal').textContent = total.toLocaleString('pt-BR') + ' votos';
+      document.getElementById('mapInspectorLeader').textContent = leader.candidato;
+      document.getElementById('mapInspectorLeaderVotes').textContent = leader.votos.toLocaleString('pt-BR') + ' (' + leaderPerc + ')';
+
+      const container = document.getElementById('mapInspectorTop5');
+      container.innerHTML = '';
+      rows.slice(0, 5).forEach((r, i) => {
+        const perc = total > 0 ? (r.votos / total) * 100 : 0;
+        const div = document.createElement('div');
+        div.className = 'space-y-0.5';
+        div.innerHTML = \`
+          <div class="flex justify-between text-[11px]">
+            <span class="font-medium truncate"><span class="text-slate-400 font-mono">\${i+1}.</span> \${r.candidato}</span>
+            <span class="font-mono font-bold">\${r.votos.toLocaleString('pt-BR')}</span>
+          </div>
+          <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+            <div class="bg-blue-600 h-full rounded-full" style="width: \${Math.min(perc * 2.5, 100)}%"></div>
+          </div>
+        \`;
+        container.appendChild(div);
+      });
+    }
+
+    function filterByFocusedBairro() {
+      document.getElementById('bairroFilter').value = focusedBairro;
+      applyFilters();
+      const el = document.getElementById('tabela');
+      el?.scrollIntoView({ behavior: 'smooth' });
+    }
+
     function updateCharts() {
-      // 1. Candidate Chart (Top 12)
       const candMap = {};
       filteredRecords.forEach(r => {
         if (!candMap[r.candidato]) {
@@ -606,7 +792,6 @@ const htmlContent = `<!DOCTYPE html>
         }]
       }, true);
 
-      // 2. Bairros Chart (Top 12)
       const bairroMap = {};
       filteredRecords.forEach(r => {
         bairroMap[r.bairro] = (bairroMap[r.bairro] || 0) + r.votos;
@@ -642,7 +827,6 @@ const htmlContent = `<!DOCTYPE html>
         }]
       }, true);
 
-      // 3. Parties Chart
       const partyMap = {};
       filteredRecords.forEach(r => {
         partyMap[r.partido] = (partyMap[r.partido] || 0) + r.votos;
@@ -661,14 +845,10 @@ const htmlContent = `<!DOCTYPE html>
           radius: ['45%', '70%'],
           avoidLabelOverlap: false,
           itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-          label: { show: false, position: 'center' },
-          emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
           data: partyData
         }]
       }, true);
 
-      // 4. Concentration Chart
-      // For each candidate in filtered list, calculate top bairro concentration
       const candRecordsMap = {};
       filteredRecords.forEach(r => {
         if (!candRecordsMap[r.candidato]) candRecordsMap[r.candidato] = { total: 0, bairros: {} };
@@ -686,7 +866,7 @@ const htmlContent = `<!DOCTYPE html>
           const perc = data.total > 0 ? (topV / data.total) * 100 : 0;
           return { nome, total: data.total, topB, topV, perc };
         })
-        .filter(c => c.total >= 3000) // Minimum significant vote total
+        .filter(c => c.total >= 3000)
         .sort((a,b) => b.perc - a.perc)
         .slice(0, 10);
 
@@ -715,9 +895,7 @@ const htmlContent = `<!DOCTYPE html>
       }, true);
     }
 
-    // Render Table
     function renderTable() {
-      // Sorting
       filteredRecords.sort((a,b) => {
         let vA, vB;
         if (sortColumnIndex === 0) { vA = a.candidato; vB = b.candidato; }
@@ -771,7 +949,6 @@ const htmlContent = `<!DOCTYPE html>
         });
       }
 
-      // Pagination controls
       document.getElementById('paginationInfo').textContent = total === 0 ? 'Nenhum resultado' :
         \`Mostrando \${start + 1} a \${Math.min(start + PAGE_SIZE, total)} de \${total.toLocaleString('pt-BR')} registros\`;
       document.getElementById('pageBadge').textContent = \`\${currentPage} / \${totalPages}\`;
@@ -804,7 +981,6 @@ const htmlContent = `<!DOCTYPE html>
       }
     }
 
-    // Export Filtered CSV
     function exportFilteredCSV() {
       let csv = 'Numero,Candidato,Partido,Bairro,Votos,% Votos Obtidos,Status\\n';
       filteredRecords.forEach(r => {
@@ -820,12 +996,12 @@ const htmlContent = `<!DOCTYPE html>
       document.body.removeChild(link);
     }
 
-    // Initialize application
     window.addEventListener('DOMContentLoaded', () => {
       initDropdowns();
       initCharts();
       updateKPIs();
       updateCharts();
+      updateMapChart();
       renderTable();
     });
   </script>
@@ -834,4 +1010,5 @@ const htmlContent = `<!DOCTYPE html>
 `;
 
 fs.writeFileSync('public/dashboard.html', htmlContent);
-console.log('Successfully generated public/dashboard.html with total length:', htmlContent.length);
+fs.writeFileSync('dashboard.html', htmlContent);
+console.log('Successfully updated public/dashboard.html and dashboard.html with interactive map!');
