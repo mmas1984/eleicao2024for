@@ -585,14 +585,28 @@
     }
 
     function initCharts() {
-      chartCand = echarts.init(document.getElementById('chartCandidates'));
-      chartBairro = echarts.init(document.getElementById('chartBairros'));
-      chartParty = echarts.init(document.getElementById('chartPartidos'));
-      chartConcentration = echarts.init(document.getElementById('chartConcentration'));
+      const candDom = document.getElementById('chartCandidates');
+      if (candDom) chartCand = echarts.init(candDom);
+
+      const bairroDom = document.getElementById('chartBairros');
+      if (bairroDom) chartBairro = echarts.init(bairroDom);
+
+      const partyDom = document.getElementById('chartPartidos');
+      if (partyDom) chartParty = echarts.init(partyDom);
+
+      const concDom = document.getElementById('chartConcentration');
+      if (concDom) chartConcentration = echarts.init(concDom);
+
+      const mapDom = document.getElementById('chartMap');
       if (mapDom) { 
         chartMap = echarts.init(mapDom);
         chartMap.on('click', (params) => {
-          if (params.name) {
+          if (params && params.name) {
+            updateFocusedBairro(params.name);
+          }
+        });
+        chartMap.on('mouseover', (params) => {
+          if (params && params.name) {
             updateFocusedBairro(params.name);
           }
         });
@@ -624,6 +638,18 @@
     }
 
     function updateMapChart() {
+      if (!chartMap) {
+        const mapDom = document.getElementById('chartMap');
+        if (mapDom) {
+          chartMap = echarts.init(mapDom);
+          chartMap.on('click', (params) => {
+            if (params && params.name) updateFocusedBairro(params.name);
+          });
+          chartMap.on('mouseover', (params) => {
+            if (params && params.name) updateFocusedBairro(params.name);
+          });
+        }
+      }
       if (!chartMap) return;
       const cand = document.getElementById('mapCandSelect').value || currentMapCandidate;
       currentMapCandidate = cand;
@@ -700,6 +726,8 @@
         }]
       }, true);
 
+      chartMap.resize();
+      setTimeout(() => { chartMap?.resize(); }, 100);
       updateFocusedBairro(focusedBairro);
     }
 
@@ -980,22 +1008,26 @@
     }
 
     function boot() {
-      try {
-        initDropdowns();
-        initCharts();
-        updateKPIs();
-        updateCharts();
-        updateMapChart();
-        renderTable();
-      } catch (err) {
-        console.error('Boot error in dashboard:', err);
-      }
+      try { initDropdowns(); } catch (e) { console.warn('initDropdowns:', e); }
+      try { initCharts(); } catch (e) { console.warn('initCharts:', e); }
+      try { updateKPIs(); } catch (e) { console.warn('updateKPIs:', e); }
+      try { updateCharts(); } catch (e) { console.warn('updateCharts:', e); }
+      try { updateMapChart(); } catch (e) { console.warn('updateMapChart:', e); }
+      try { renderTable(); } catch (e) { console.warn('renderTable:', e); }
+      try { updateFocusedBairro(focusedBairro); } catch (e) { console.warn('updateFocusedBairro:', e); }
     }
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', boot);
     } else {
       boot();
     }
+    window.addEventListener('load', () => {
+      chartCand?.resize();
+      chartBairro?.resize();
+      chartParty?.resize();
+      chartConcentration?.resize();
+      chartMap?.resize();
+    });
   </script>
 </body>
 </html>
