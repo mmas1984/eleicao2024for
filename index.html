@@ -15,16 +15,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      // Detecção de ambiente estático do GitHub Pages sem build de Vite
-      window.addEventListener('error', function(e) {
-        if (e.target && (e.target.tagName === 'SCRIPT' || (e.filename && e.filename.endsWith('.tsx')))) {
-          console.warn('Detectado servidor estático sem execução de bundler (.tsx). Redirecionando para o dashboard autocontido...');
-          window.location.replace('./dashboard.html');
-        }
-      }, true);
-    </script>
-    <script type="module" src="./src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
     <noscript>
       <meta http-equiv="refresh" content="0; url=./dashboard.html" />
     </noscript>
